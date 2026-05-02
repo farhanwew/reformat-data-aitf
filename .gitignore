@@ -3,3 +3,6 @@ script.sh
 example-reference
 output
 reformat/data
+dump
+candidate-reformat
+reformat_common/__pycache__
