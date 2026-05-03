@@ -62,6 +62,11 @@ def reformat_csv(
     filtered_df = df.head(limit).copy() if limit else df.copy()
     total = len(filtered_df)
 
+    rows_to_examine = sum(
+        0 if config.prepare_row(row.to_dict()).skip_generation else 1
+        for _, row in filtered_df.iterrows()
+    )
+
     run_dir = make_run_dir(output_dir, config.run_dir_suffix)
     csv_path = os.path.join(run_dir, "results.csv")
     parse_log_path = os.path.join(run_dir, "parse_failures.jsonl")
@@ -74,6 +79,8 @@ def reformat_csv(
 
     if limit:
         print(f"Mode testing: hanya memproses {total} baris pertama.")
+    rows_skipped = total - rows_to_examine
+    print(f"Rows to examine : {rows_to_examine}/{total}" + (f" ({rows_skipped} di-skip)" if rows_skipped else ""))
 
     start_time = datetime.now()
     summary = _run_batches(
@@ -93,7 +100,7 @@ def reformat_csv(
 
     print("\nOutput files:")
     write_debug_outputs(run_dir, csv_path, summary["all_rows"], label_field=config.label_field)
-    write_merged_csv(run_dir, summary["all_indexed"], filtered_df)
+    write_merged_csv(run_dir, summary["all_indexed"], filtered_df, merge_fields=config.merge_output_fields)
     write_run_info(
         run_dir=run_dir,
         run_command=run_command,
@@ -104,6 +111,7 @@ def reformat_csv(
         timeout=timeout,
         limit=limit,
         total_rows=total,
+        rows_to_examine=rows_to_examine,
         start_time=start_time,
         end_time=end_time,
         usage_totals=summary["usage_totals"],

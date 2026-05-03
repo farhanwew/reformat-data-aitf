@@ -51,3 +51,4 @@ class RunnerConfig(Generic[GeneratedT]):
     retry_usage_report_keys: list[str] = field(default_factory=list)
     label_field: str | None = None
     date_range_field: str | None = None
+    merge_output_fields: list[str] | None = None

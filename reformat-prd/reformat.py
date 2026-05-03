@@ -30,7 +30,9 @@ DEFAULT_BATCH_SIZE = 15
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
 
-OUTPUT_FIELDS = ["link", "source", "ringkasan", "klaim", "fakta", "label", "analisis"]
+OUTPUT_FIELDS = ["link", "source", "ringkasan", "klaim", "fakta", "label", "analisis", "date", "path"]
+
+PATH_COLUMN_VARIANTS = ["video path", "video_path", "file name", "filename", "nama file", "nama_file"]
 
 REQUIRED_RESPONSE_KEYS = ANALISIS_RESULT_KEYS
 
@@ -102,6 +104,14 @@ def clean_analisis(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _find_path(row_data: dict[str, Any]) -> str:
+    for col in PATH_COLUMN_VARIANTS:
+        val = single_line(row_data.get(col, ""))
+        if val:
+            return val
+    return ""
+
+
 def _build_result_row(
     row_data: dict[str, Any],
     parsed: AnalisisResult,
@@ -117,6 +127,8 @@ def _build_result_row(
         "fakta": single_line(parsed.fakta or "tidak ada"),
         "label": single_line(map_label(raw_label)),
         "analisis": single_line(parsed.analisis or clean_analisis(raw_analisis)),
+        "date": single_line(row_data.get("date", "")),
+        "path": _find_path(row_data),
     }
 
 

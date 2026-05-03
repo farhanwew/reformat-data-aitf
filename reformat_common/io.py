@@ -91,16 +91,25 @@ def write_merged_csv(
     run_dir: str,
     all_indexed: list[tuple[int, ResultRow]],
     original_df: pd.DataFrame,
+    merge_fields: list[str] | None = None,
 ) -> str:
     results_by_idx = {
         index: {key: value for key, value in row.items() if not key.startswith("_")}
         for index, row in all_indexed
     }
+    if merge_fields is not None:
+        results_by_idx = {
+            index: {k: v for k, v in row.items() if k in merge_fields}
+            for index, row in results_by_idx.items()
+        }
     result_df = pd.DataFrame.from_dict(results_by_idx, orient="index")
     overlap_columns = [column for column in result_df.columns if column in original_df.columns]
-    if overlap_columns:
-        result_df = result_df.drop(columns=overlap_columns)
-    merged = original_df.join(result_df)
+    merged = original_df.copy()
+    for col in overlap_columns:
+        for index, row in results_by_idx.items():
+            merged.at[index, col] = row.get(col, "")
+    result_df = result_df.drop(columns=overlap_columns)
+    merged = merged.join(result_df)
     merged_path = os.path.join(run_dir, "merged.csv")
     merged.to_csv(merged_path, index=False, encoding="utf-8")
     print(f"  MERGED CSV : {merged_path}")
@@ -124,6 +133,7 @@ def write_run_info(
     all_rows: list[ResultRow] | None = None,
     label_field: str | None = None,
     date_range: tuple[str, str] | None = None,
+    rows_to_examine: int | None = None,
 ) -> None:
     duration = (end_time - start_time).total_seconds()
     info_path = os.path.join(run_dir, "run_info.txt")
@@ -140,6 +150,9 @@ def write_run_info(
         handle.write(f"Timeout    : {timeout}s\n")
         handle.write(f"Limit      : {limit if limit else 'none (all rows)'}\n")
         handle.write(f"Rows       : {total_rows}\n")
+        if rows_to_examine is not None:
+            rows_skipped = total_rows - rows_to_examine
+            handle.write(f"Examine    : {rows_to_examine}/{total_rows}" + (f" ({rows_skipped} di-skip)\n" if rows_skipped else "\n"))
         if date_range:
             handle.write(f"Data range : {date_range[0]} s/d {date_range[1]}\n")
         handle.write(f"Duration   : {duration:.1f}s\n")
