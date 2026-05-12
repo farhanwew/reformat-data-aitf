@@ -10,11 +10,11 @@ on:
       end_page:
         description: "End page (max ~50 pages per run)"
         required: true
-        default: "5"
+        default: "2"
       dry_run:
         description: "Dry run (no downloads)"
         type: boolean
-        default: True
+        default: true
       hf_repo:
         description: "HuggingFace repo id"
         required: false
