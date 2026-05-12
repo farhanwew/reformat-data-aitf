@@ -14,7 +14,7 @@ on:
       dry_run:
         description: "Dry run (no downloads)"
         type: boolean
-        default: false
+        default: True
       hf_repo:
         description: "HuggingFace repo id"
         required: false
@@ -32,6 +32,8 @@ jobs:
       SCRAPER_REPO: "https://x-access-token:${{ secrets.GH_PAT }}@github.com/aitf-its-tim3-dfk/Video-Scrapper.git"
       DOWNLOAD_DIR: ${{ github.workspace }}/tbh_output
       CHECKPOINT_DIR: ${{ github.workspace }}/checkpoint
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      COOKIES_TXT: ${{ secrets.COOKIES_TXT }}
 
     steps:
       # ── 1. Checkout automation repo (for checkpoint storage) ─────────────────
@@ -71,7 +73,7 @@ jobs:
 
       # ── 5. Write cookies (optional) ───────────────────────────────────────────
       - name: Write cookies.txt
-        if: ${{ secrets.COOKIES_TXT != '' }}
+        if: env.COOKIES_TXT != ''
         run: |
           echo "${{ secrets.COOKIES_TXT }}" | base64 -d > cookies.txt
           echo "COOKIES_ARGS=--cookies ${{ github.workspace }}/cookies.txt --confirm-cookies" >> $GITHUB_ENV
@@ -138,7 +140,7 @@ jobs:
 
       # ── 9. Upload videos to HuggingFace ──────────────────────────────────────
       - name: Upload videos to HuggingFace
-        if: ${{ secrets.HF_TOKEN != '' && github.event.inputs.dry_run != 'true' }}
+        if: env.HF_TOKEN != '' && github.event.inputs.dry_run != 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_REPO: ${{ github.event.inputs.hf_repo || 'farwew/aitf-scrap' }}
