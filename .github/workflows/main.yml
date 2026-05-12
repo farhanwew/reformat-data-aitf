@@ -10,7 +10,7 @@ on:
       end_page:
         description: "End page (max ~50 pages per run)"
         required: true
-        default: "2"
+        default: "5"
       dry_run:
         description: "Dry run (no downloads)"
         type: boolean
@@ -163,9 +163,11 @@ jobs:
       # ── 11. Commit checkpoint back to automation repo ─────────────────────────
       - name: Commit checkpoint
         if: always()
+        working-directory: ${{ github.workspace }}
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global safe.directory "$GITHUB_WORKSPACE"
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add checkpoint/
           git diff --cached --quiet || \
             git commit -m "chore: checkpoint pages ${START_PAGE}-${END_PAGE} [skip ci]"
