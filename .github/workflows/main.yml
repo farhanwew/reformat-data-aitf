@@ -10,7 +10,7 @@ on:
       end_page:
         description: "End page (max ~50 pages per run)"
         required: true
-        default: "100"
+        default: "50"
       dry_run:
         description: "Dry run (no downloads)"
         type: boolean
@@ -18,7 +18,7 @@ on:
       media_type:
         description: "Media type to scrape: video, photo, or all"
         required: false
-        default: "all"
+        default: "video"
         type: choice
         options:
           - video
