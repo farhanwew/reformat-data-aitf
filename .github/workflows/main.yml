@@ -10,7 +10,7 @@ on:
       end_page:
         description: "End page (max ~50 pages per run)"
         required: true
-        default: "5"
+        default: "2"
       dry_run:
         description: "Dry run (no downloads)"
         type: boolean
@@ -36,18 +36,12 @@ jobs:
       COOKIES_TXT: ${{ secrets.COOKIES_TXT }}
 
     steps:
-      # ── 1. Checkout automation repo (for checkpoint storage) ─────────────────
-      - name: Checkout automation repo
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GH_PAT }}
-
-      # ── 2. Clone scraper repo ─────────────────────────────────────────────────
-      - name: Clone AITF-scrapper
+      # ── 1. Clone scraper repo ─────────────────────────────────────────────────
+      - name: Clone Video-Scrapper
         run: |
           git clone --depth 1 ${{ env.SCRAPER_REPO }} scraper
 
-      # ── 3. Python setup ───────────────────────────────────────────────────────
+      # ── 2. Python setup ───────────────────────────────────────────────────────
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -60,33 +54,31 @@ jobs:
           pip install -r scraper/requirements.txt
           pip install huggingface_hub
 
-      # ── 4. Restore checkpoint ─────────────────────────────────────────────────
+      # ── 3. Restore checkpoint (restore dari run sebelumnya, save ke key baru) ──
       - name: Restore checkpoint cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
-          path: checkpoint/
-          key: tbh-checkpoint-${{ github.ref_name }}
+          path: ${{ env.CHECKPOINT_DIR }}
+          key: tbh-checkpoint-${{ github.run_id }}
           restore-keys: tbh-checkpoint-
 
       - name: Ensure dirs exist
-        run: mkdir -p checkpoint "$DOWNLOAD_DIR"
+        run: mkdir -p "$CHECKPOINT_DIR" "$DOWNLOAD_DIR"
 
-      # ── 5. Write cookies (optional) ───────────────────────────────────────────
+      # ── 4. Write cookies (optional) ───────────────────────────────────────────
       - name: Write cookies.txt
         if: env.COOKIES_TXT != ''
         run: |
           echo "${{ secrets.COOKIES_TXT }}" | base64 -d > cookies.txt
           echo "COOKIES_ARGS=--cookies ${{ github.workspace }}/cookies.txt --confirm-cookies" >> $GITHUB_ENV
 
-      # ── 6. Compute page range + stop-before-date ─────────────────────────────
+      # ── 5. Compute page range + stop-before-date ──────────────────────────────
       - name: Compute page range (scheduled)
         if: github.event_name == 'schedule'
         run: |
-          # Always start from page 1 so we catch new articles
           echo "START_PAGE=1"  >> $GITHUB_ENV
           echo "END_PAGE=30"   >> $GITHUB_ENV
-          # Pass last-scraped date as stop cutoff so we don't re-process old articles
-          LAST_DATE=$(cat checkpoint/last_date.txt 2>/dev/null || echo "")
+          LAST_DATE=$(cat "$CHECKPOINT_DIR/last_date.txt" 2>/dev/null || echo "")
           echo "STOP_DATE_ARG=${LAST_DATE:+--stop-before-date $LAST_DATE}" >> $GITHUB_ENV
           echo "Scheduled run: pages 1 → 30, stop before ${LAST_DATE:-<none>}"
 
@@ -95,9 +87,9 @@ jobs:
         run: |
           echo "START_PAGE=${{ github.event.inputs.start_page }}" >> $GITHUB_ENV
           echo "END_PAGE=${{ github.event.inputs.end_page }}"     >> $GITHUB_ENV
-          echo "STOP_DATE_ARG=" >> $GITHUB_ENV   # manual runs always scrape the full range
+          echo "STOP_DATE_ARG=" >> $GITHUB_ENV
 
-      # ── 7. Run scraper ────────────────────────────────────────────────────────
+      # ── 6. Run scraper ────────────────────────────────────────────────────────
       - name: Run TurnBackHoax scraper
         working-directory: scraper/scrapper
         run: |
@@ -112,37 +104,43 @@ jobs:
             --checkpoint-file "$CHECKPOINT_DIR/checkpoint.json" \
             --resume \
             --log-level INFO \
-            ${{ env.COOKIES_ARGS }} \
+            $COOKIES_ARGS \
             $STOP_DATE_ARG \
             $DRY_FLAG
 
-      # ── 8. Save last-scraped date marker ─────────────────────────────────────
+      # ── 7. Save last-scraped date ─────────────────────────────────────────────
       - name: Save last scraped date
         if: always()
         run: |
-          # Extract the newest article date from checkpoint and save it
           python - <<'EOF'
           import json, sys, os
-          ckpt = os.environ.get("CHECKPOINT_DIR", "checkpoint")
+          ckpt = os.environ["CHECKPOINT_DIR"]
           path = os.path.join(ckpt, "checkpoint.json")
           try:
               data = json.load(open(path))
               dates = [v["date"] for v in data.get("found_videos", []) if v.get("date")]
               if dates:
-                  newest = max(dates)[:10]  # keep YYYY-MM-DD only
+                  newest = max(dates)[:10]
                   open(os.path.join(ckpt, "last_date.txt"), "w").write(newest)
                   print(f"Saved last_date: {newest}")
               else:
-                  print("No dates found in checkpoint, keeping previous last_date.txt")
+                  print("No dates found, keeping previous last_date.txt")
           except Exception as e:
               print(f"Could not read checkpoint: {e}", file=sys.stderr)
           EOF
+
+      # ── 8. Save checkpoint cache (selalu save key baru tiap run) ─────────────
+      - name: Save checkpoint cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CHECKPOINT_DIR }}
+          key: tbh-checkpoint-${{ github.run_id }}
 
       # ── 9. Upload videos to HuggingFace ──────────────────────────────────────
       - name: Upload videos to HuggingFace
         if: env.HF_TOKEN != '' && github.event.inputs.dry_run != 'true'
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_REPO: ${{ github.event.inputs.hf_repo || 'farwew/aitf-scrap' }}
         run: |
           python scraper/scrapper/upload_to_hf.py \
@@ -151,24 +149,12 @@ jobs:
             --token      "$HF_TOKEN" \
             --run-label  "pages-${START_PAGE}-${END_PAGE}"
 
-      # ── 10. Save CSVs as artifact ─────────────────────────────────────────────
+      # ── 10. Upload CSVs as artifact ───────────────────────────────────────────
       - name: Upload CSV artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: csv-pages-${{ env.START_PAGE }}-${{ env.END_PAGE }}
           path: ${{ env.DOWNLOAD_DIR }}/*.csv
+          if-no-files-found: warn
           retention-days: 90
-
-      # ── 11. Commit checkpoint back to automation repo ─────────────────────────
-      - name: Commit checkpoint
-        if: always()
-        working-directory: ${{ github.workspace }}
-        run: |
-          git config --global safe.directory "$GITHUB_WORKSPACE"
-          git config --global user.name  "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add checkpoint/
-          git diff --cached --quiet || \
-            git commit -m "chore: checkpoint pages ${START_PAGE}-${END_PAGE} [skip ci]"
-          git push
