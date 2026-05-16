@@ -18,7 +18,7 @@ on:
       media_type:
         description: "Media type to scrape: video, photo, or all"
         required: false
-        default: "video"
+        default: "all"
         type: choice
         options:
           - video
